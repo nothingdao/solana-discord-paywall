@@ -1,0 +1,75 @@
+// schema.prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Guild {
+  id        String      @id // Discord Guild ID
+  name      String
+  roles     GuildRole[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+model GuildRole {
+  id            String             @id @default(uuid())
+  guildId       String
+  roleId        String // Discord Role ID
+  name          String // Role name for reference
+  price         Float // Price in SOL
+  duration      Int // Duration in days
+  guild         Guild              @relation(fields: [guildId], references: [id])
+  subscriptions UserSubscription[]
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+}
+
+model User {
+  id                String             @id @default(uuid())
+  discordId         String             @unique
+  walletAddress     String?
+  referralCode      String             @unique
+  referredBy        String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  payments          Payment[]
+  subscriptions     UserSubscription[]
+  referralsGiven    Referral[]         @relation("Referrer")
+  referralsReceived Referral[]         @relation("Referred")
+}
+
+model UserSubscription {
+  id          String    @id @default(uuid())
+  userId      String
+  guildRoleId String
+  startDate   DateTime  @default(now())
+  endDate     DateTime
+  user        User      @relation(fields: [userId], references: [id])
+  guildRole   GuildRole @relation(fields: [guildRoleId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Payment {
+  id                   String   @id @default(uuid())
+  userId               String
+  transactionSignature String   @unique
+  amount               Float
+  createdAt            DateTime @default(now())
+  user                 User     @relation(fields: [userId], references: [id])
+}
+
+model Referral {
+  id           String   @id @default(uuid())
+  referrerId   String
+  referredId   String
+  rewardAmount Float
+  createdAt    DateTime @default(now())
+  referrer     User     @relation("Referrer", fields: [referrerId], references: [id])
+  referred     User     @relation("Referred", fields: [referredId], references: [id])
+}
