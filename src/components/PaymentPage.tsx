@@ -1,12 +1,27 @@
 // src/components/PaymentPage.tsx
-// Move the PaymentPage component we created earlier here
-
 import { useState } from 'react';
-import { useWallet } from '@solana/wallet-adapter-react';
+import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { Transaction, PublicKey, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js';
+
+const createPaymentTransaction = async (
+  publicKey: PublicKey,
+  recipientAddress: string,
+  amount: number
+) => {
+  const transaction = new Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey: publicKey,
+      toPubkey: new PublicKey(recipientAddress),
+      lamports: amount * LAMPORTS_PER_SOL,
+    })
+  );
+  return transaction;
+};
 
 const PaymentPage = () => {
   const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
   const [referralCode, setReferralCode] = useState('');
   const [status, setStatus] = useState('');
 
@@ -19,12 +34,13 @@ const PaymentPage = () => {
     try {
       setStatus('Processing payment...');
 
-      // Create payment transaction
-      // This is simplified - you'd need to add actual transaction logic
-      const transaction = await createPaymentTransaction(publicKey);
+      const transaction = await createPaymentTransaction(
+        publicKey,
+        'YOUR_RECIPIENT_WALLET_ADDRESS', // Replace with your actual wallet
+        1 // 1 SOL
+      );
 
-      // Send transaction
-      const signature = await sendTransaction(transaction);
+      const signature = await sendTransaction(transaction, connection);
 
       // Verify payment and update Discord role
       const response = await fetch('/api/verifyPayment', {
@@ -44,8 +60,9 @@ const PaymentPage = () => {
       } else {
         setStatus('Payment failed: ' + result.error);
       }
-    } catch (error) {
-      setStatus('Error: ' + error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setStatus(`Error: ${errorMessage}`);
     }
   };
 

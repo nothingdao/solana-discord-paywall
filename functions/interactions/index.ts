@@ -8,13 +8,16 @@ export const handler = async (event) => {
   // Verify the request is actually from Discord
   const signature = event.headers['x-signature-ed25519']
   const timestamp = event.headers['x-signature-timestamp']
+  const publicKey = process.env.DISCORD_PUBLIC_KEY
 
-  const isValidRequest = verifyKey(
-    event.body,
-    signature,
-    timestamp,
-    process.env.DISCORD_PUBLIC_KEY
-  )
+  if (!signature || !timestamp || !publicKey) {
+    return {
+      statusCode: 401,
+      body: 'Missing request signature or public key',
+    }
+  }
+
+  const isValidRequest = verifyKey(event.body, signature, timestamp, publicKey)
 
   if (!isValidRequest) {
     return {
