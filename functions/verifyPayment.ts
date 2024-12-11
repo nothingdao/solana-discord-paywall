@@ -1,5 +1,5 @@
 // functions/verifyPayment.ts
-import { Connection, PublicKey } from '@solana/web3.js'
+import { Connection } from '@solana/web3.js'
 import { PrismaClient } from '@prisma/client'
 import { Client, GatewayIntentBits } from 'discord.js'
 
@@ -7,49 +7,88 @@ const prisma = new PrismaClient()
 const discord = new Client({ intents: [GatewayIntentBits.Guilds] })
 discord.login(process.env.DISCORD_BOT_TOKEN)
 
-export async function handler(event) {
+interface VerifyPaymentEvent {
+  httpMethod: string
+  body: string
+}
+
+interface PaymentRequest {
+  signature: string
+  discordId: string
+  referralCode?: string
+  guildId: string
+  roleId: string
+}
+
+export async function handler(event: VerifyPaymentEvent) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' }
   }
 
-  const { signature, discordId, referralCode } = JSON.parse(event.body)
+  const { signature, discordId, referralCode, guildId, roleId } = JSON.parse(
+    event.body
+  ) as PaymentRequest
 
   try {
     // 1. Verify Solana transaction
-    const connection = new Connection(process.env.SOLANA_RPC_URL)
+    const connection = new Connection(process.env.SOLANA_RPC_URL || '')
     const tx = await connection.getTransaction(signature)
 
-    if (!tx || tx.meta.err) {
+    if (!tx || !tx.meta || tx.meta.err) {
       return {
         statusCode: 400,
         body: JSON.stringify({ error: 'Invalid transaction' }),
       }
     }
 
-    // 2. Create or update user
+    // 2. Get or create guild role
+    const guildRole = await prisma.guildRole.findFirst({
+      where: {
+        guildId,
+        roleId,
+      },
+    })
+
+    if (!guildRole) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: 'Invalid guild or role' }),
+      }
+    }
+
+    // 3. Create or update user
     const user = await prisma.user.upsert({
       where: { discordId },
-      update: {
-        subscriptionExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-      },
+      update: {},
       create: {
         discordId,
         referralCode: Math.random().toString(36).substring(2, 8),
         referredBy: referralCode,
-        subscriptionExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       },
     })
 
-    // 3. Record payment
+    // 4. Record payment
     await prisma.payment.create({
       data: {
         userId: user.id,
         transactionSignature: signature,
-        amount: 1.0, // Set your amount
+        amount: guildRole.price,
       },
     })
 
-    // 4. Process referral if exists
+    // 5. Create subscription
+    const endDate = new Date()
+    endDate.setDate(endDate.getDate() + guildRole.duration)
+
+    await prisma.userSubscription.create({
+      data: {
+        userId: user.id,
+        guildRoleId: guildRole.id,
+        endDate,
+      },
+    })
+
+    // 6. Process referral if exists
     if (referralCode) {
       const referrer = await prisma.user.findFirst({
         where: { referralCode },
@@ -60,16 +99,16 @@ export async function handler(event) {
           data: {
             referrerId: referrer.id,
             referredId: user.id,
-            rewardAmount: 0.1, // Set reward amount
+            rewardAmount: guildRole.price * 0.1, // 10% reward
           },
         })
       }
     }
 
-    // 5. Add Discord role
-    const guild = await discord.guilds.fetch(process.env.DISCORD_GUILD_ID)
+    // 7. Add Discord role
+    const guild = await discord.guilds.fetch(guildId)
     const member = await guild.members.fetch(discordId)
-    await member.roles.add(process.env.DISCORD_ROLE_ID)
+    await member.roles.add(roleId)
 
     return {
       statusCode: 200,
