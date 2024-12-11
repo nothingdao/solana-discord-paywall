@@ -1,7 +1,15 @@
 // functions/interactions/index.ts
 import { verifyKey } from 'discord-interactions'
 
-export const handler = async (event) => {
+interface DiscordEvent {
+  body: string
+  headers: {
+    'x-signature-ed25519': string
+    'x-signature-timestamp': string
+  }
+}
+
+export const handler = async (event: DiscordEvent) => {
   // Discord sends a ping with type 1 to verify the endpoint
   const { type = null } = JSON.parse(event.body || '{}')
 
